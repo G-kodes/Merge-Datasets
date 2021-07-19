@@ -1,0 +1,80 @@
+from snakemake.utils import min_version, validate
+import os
+
+min_version("6.0")
+
+
+# DEFINE CONFIG FILE FOR SNAKEMAKE:
+configfile: os.path.join("config", "config.json")
+
+
+validate(config, os.path.join("..", "config", "config.schema.json"))
+
+include: "rules/common.py"
+
+rule all:
+    input:
+        expand("results/ALL.{ext}", ext=["vcf.gz", "vcf.gz.tbi"])
+
+rule CP:
+    """
+    Copy any files that do not require compression or generation
+    """
+
+    log:
+        "results/{filename}{ext}.log",
+    input:
+        GetInputFile,
+    output:
+        "results/{filename}{ext}",
+    params:
+        executable=config["Executables"]["cp"],
+    conda:
+        "envs/MERGE-DATASETS.yaml"
+    shell:
+        """
+        echo 'Copying {input} -> {output}'
+        {params.executable} "{input}" "{output}"
+        """
+
+rule MERGE:
+    """
+    Merge the provided list of VCF datasets into one psudo-dataset.
+    """
+
+    log:
+        "results/{filename}.log"
+    input:
+        "results/{filename}.vcf.gz"
+    output:
+        "results/ALL.vcf.gz"
+    params:
+        executable=config["Executables"]['BCF-Tools']
+    conda:
+        "envs/MERGE-DATASETS.yml"
+    shell:
+        """
+        echo 'Merging VCFs in results/merge.list -> {output}'
+        {params.executable} merge -l results/merge.list -O z -o {output}
+        """
+
+rule TABIX_INDEXING:
+    """
+    Generate a Tabix index for the given VCF file
+    """
+
+    log:
+        "results/{filename}.log",
+    input:
+        "results/{filename}.vcf.gz",
+    output:
+        "results/{filename}.vcf.gz.tbi",
+    conda:
+        "envs/MERGE-DATASETS.yml"
+    params:
+        executable=config["Executables"]["Tabix"],
+    shell:
+        """
+        echo 'Generating an index file: {input} -> {output}'
+        {params.executable} -f -p vcf {input}
+        """
